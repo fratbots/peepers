@@ -4,23 +4,35 @@ import imutils
 import dlib
 from imutils import face_utils
 from eyes import eye_aspect_ratio
+from detector import detect
+from predictor import predict
+from state import STATE_BEGINNING, STATE_LEVEL_ONE, STATE_LEVEL_TWO, STATE_GAME_OVER
 
 class Game:
     """High-level game controller."""
 
+    STATE = STATE_BEGINNING
+
     def __init__(self, eye_ar_thresh, eye_ar_consec_frames):
         self.EYE_AR_THRESH = eye_ar_thresh
         self.EYE_AR_CONSEC_FRAMES = eye_ar_consec_frames
-        self.detector = dlib.get_frontal_face_detector()
-        self.predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
 
+    def state(self):
+        return self.STATE
 
-    def start(self):
+    def beginning(self):
+        print("beginning")
+        self.STATE = STATE_LEVEL_ONE
+
+    def level_one(self):
         # frame counter
         FRAMES_COUNT = 0
 
         # total number of blinks
         BLINKS_COUNT = 0
+
+        # blinks needed to loose the game
+        BLINKS_TO_LOOSE = 3
 
         cap = cv2.VideoCapture(0)
         cap.set(cv2.CAP_PROP_FPS, 120)
@@ -43,13 +55,13 @@ class Game:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
             # detect faces in the grayscale frame
-            rects = self.detector(gray, 0)
+            rects = detect(gray, 0)
 
             # loop over the face detections
             for rect in rects:
                 # determine the facial landmarks for the face region, then
                 # convert the facial landmark (x, y)-coordinates to a NumPy array
-                shape = self.predictor(gray, rect)
+                shape = predict(gray, rect)
                 shape = face_utils.shape_to_np(shape)
 
                 # extract the left and right eye coordinates, then use the
@@ -72,22 +84,25 @@ class Game:
                 # check to see if the eye aspect ratio is below the blink
                 # threshold, and if so, increment the blink frame counter
                 if ear < self.EYE_AR_THRESH:
-                    self.FRAMES_COUNT += 1
+                    FRAMES_COUNT += 1
 
                 # otherwise, the eye aspect ratio is not below the blink
                 # threshold
                 else:
                     # if the eyes were closed for a sufficient number of
                     # then increment the total number of blinks
-                    if self.FRAMES_COUNT >= self.EYE_AR_CONSEC_FRAMES:
-                        self.BLINKS_COUNT += 1
+                    if FRAMES_COUNT >= self.EYE_AR_CONSEC_FRAMES:
+                        BLINKS_COUNT += 1
+                        if BLINKS_COUNT == BLINKS_TO_LOOSE:
+                            self.STATE = STATE_GAME_OVER
+                            return
 
                     # reset the eye frame counter
-                    self.FRAMES_COUNT = 0
+                    FRAMES_COUNT = 0
 
                 # draw the total number of blinks on the frame along with
                 # the computed eye aspect ratio for the frame
-                cv2.putText(frame, "Blinks: {}".format(self.BLINKS_COUNT), (10, 30),
+                cv2.putText(frame, "Blinks: {}".format(BLINKS_COUNT), (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 cv2.putText(frame, "EAR: {:.2f}".format(ear), (300, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -107,3 +122,6 @@ class Game:
         # When everything done, release the capture
         cap.release()
         cv2.destroyAllWindows()
+
+    def over(self):
+        print("game over")
